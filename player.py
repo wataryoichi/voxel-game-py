@@ -7,6 +7,7 @@ from OpenGL.GLU import *
 GRAVITY = -20.0
 JUMP_VEL = 7.0
 MOVE_SPEED = 5.0
+SPRINT_SPEED = 8.5
 MOUSE_SENS = 0.15
 PLAYER_W = 0.3   # half-width for collision
 PLAYER_H = 1.7   # full height
@@ -24,6 +25,7 @@ class Player:
         self.on_ground = False
         self.selected_block = 1  # GRASS
         self.eye_height = EYE_OFFSET
+        self.sprinting = False
 
     def handle_mouse(self, rel):
         dx, dy = rel
@@ -32,7 +34,9 @@ class Player:
 
     def handle_keys(self, keys, dt: float):
         import pygame
-        speed = MOVE_SPEED * dt
+        self.sprinting = keys[pygame.K_LSHIFT] or keys[pygame.K_RSHIFT]
+        base_speed = SPRINT_SPEED if self.sprinting else MOVE_SPEED
+        speed = base_speed * dt
         rad = math.radians(self.yaw)
         sin_y = math.sin(rad)
         cos_y = math.cos(rad)

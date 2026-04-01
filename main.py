@@ -3,7 +3,6 @@
 import sys
 import math
 import time
-import ctypes
 
 import pygame
 from pygame.locals import *
@@ -19,11 +18,12 @@ FPS = 60
 FOV = 70.0
 NEAR_CLIP = 0.1
 FAR_CLIP = 200.0
+DAY_LENGTH = 120.0  # seconds per full day cycle
 
 
 def main():
     pygame.init()
-    pygame.display.set_mode((WINDOW_W, WINDOW_H), DOUBLEBUF | OPENGL)
+    screen = pygame.display.set_mode((WINDOW_W, WINDOW_H), DOUBLEBUF | OPENGL)
     pygame.display.set_caption("Voxel Game")
     pygame.mouse.set_visible(False)
     pygame.event.set_grab(True)
@@ -31,24 +31,51 @@ def main():
     glEnable(GL_DEPTH_TEST)
     glEnable(GL_CULL_FACE)
     glCullFace(GL_BACK)
-    glClearColor(0.53, 0.81, 0.92, 1.0)  # sky blue
+
+    # Fog setup
+    glEnable(GL_FOG)
+    glFogi(GL_FOG_MODE, GL_LINEAR)
+    glFogf(GL_FOG_START, 40.0)
+    glFogf(GL_FOG_END, 70.0)
 
     glMatrixMode(GL_PROJECTION)
     glLoadIdentity()
     gluPerspective(FOV, WINDOW_W / WINDOW_H, NEAR_CLIP, FAR_CLIP)
     glMatrixMode(GL_MODELVIEW)
 
-    world = World(chunk_radius=3, seed=42)
+    world = World(chunk_radius=4, seed=42)
     player = Player(x=8.0, y=world.get_height(8, 8) + 2.0, z=8.0)
     renderer = Renderer(world)
 
     clock = pygame.time.Clock()
     prev_time = time.monotonic()
+    game_time = DAY_LENGTH * 0.25  # start at sunrise
+    fps_timer = 0.0
+    fps_display = 0
 
     while True:
         now = time.monotonic()
-        dt = min(now - prev_time, 0.05)  # cap delta to avoid spiral
+        dt = min(now - prev_time, 0.05)
         prev_time = now
+        game_time += dt
+
+        # FPS counter (update every 0.5s)
+        fps_timer += dt
+        if fps_timer >= 0.5:
+            fps_display = int(clock.get_fps())
+            fps_timer = 0.0
+
+        # Day-night cycle
+        day_phase = (game_time % DAY_LENGTH) / DAY_LENGTH  # 0..1
+        sun_angle = day_phase * 2 * math.pi
+        brightness = max(0.15, (math.sin(sun_angle) + 0.3) / 1.3)
+        brightness = min(1.0, brightness)
+
+        sky_r = 0.53 * brightness
+        sky_g = 0.81 * brightness
+        sky_b = 0.92 * brightness
+        glClearColor(sky_r, sky_g, sky_b, 1.0)
+        glFogfv(GL_FOG_COLOR, [sky_r, sky_g, sky_b, 1.0])
 
         for event in pygame.event.get():
             if event.type == QUIT:
@@ -58,8 +85,13 @@ def main():
                 if event.key == K_ESCAPE:
                     pygame.quit()
                     sys.exit()
-                elif event.key in (K_1, K_2, K_3, K_4):
-                    player.selected_block = event.key - K_1 + 1
+                elif event.key in (K_1, K_2, K_3, K_4, K_5, K_6):
+                    block_map = {K_1: 1, K_2: 2, K_3: 3, K_4: 4, K_5: 5, K_6: 7}
+                    player.selected_block = block_map.get(event.key, 1)
+                elif event.key == K_e:
+                    cycle = [1, 2, 3, 4, 5, 7]
+                    idx = cycle.index(player.selected_block) if player.selected_block in cycle else 0
+                    player.selected_block = cycle[(idx + 1) % len(cycle)]
             elif event.type == MOUSEMOTION:
                 player.handle_mouse(event.rel)
             elif event.type == MOUSEBUTTONDOWN:
@@ -75,7 +107,7 @@ def main():
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
         glLoadIdentity()
         player.apply_camera()
-        renderer.draw(player)
+        renderer.draw(player, brightness, fps_display)
 
         pygame.display.flip()
         clock.tick(FPS)
